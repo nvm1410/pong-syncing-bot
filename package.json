@@ -1,7 +1,9 @@
 {
   "dependencies": {
+    "@cyclic.sh/dynamodb": "^0.0.35",
     "dotenv": "^16.4.5",
-    "ethers": "^6.11.1"
+    "ethers": "^6.11.1",
+    "p-queue": "^8.0.1"
   },
   "type": "module"
 }
