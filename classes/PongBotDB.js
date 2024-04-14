@@ -1,54 +1,49 @@
-import CyclicDb from "@cyclic.sh/dynamodb"
-import 'dotenv/config'
+import { MongoClient } from 'mongodb'
 
-
-const CYCLIC_DB = process.env.CYCLIC_DB
+const URL = 'mongodb://localhost:27017';
+const DB_NAME = 'pongBot';
 
 export default class PongBotDB {
-    constructor() {
-        this.db = CyclicDb(CYCLIC_DB)
-        this.botCollection = this.db.collection("bots")
+    async init() {
+        const client = new MongoClient(URL);
+        await client.connect();
+        const db = client.db(DB_NAME);
+        this.botCollection = db.collection('bots');
+        return this
     }
 
-    async resetStartBlock() {
-        // save as bots[0] for easy retrieve
-        await this.botCollection.set('0', {
-            startBlock: null
-        })
+    async resetAll() {
+        // use for testing
+        await this.botCollection.updateOne({ _id: 0 }, { $set: { startBlock: null, nonce: null, latestTransactionHash: null } }, { upsert: true })
     }
 
     async setStartBlock(startBlock) {
         // save as bots[0] for easy retrieve
-        await this.botCollection.set('0', {
-            startBlock
-        })
+        await this.botCollection.updateOne({ _id: 0 }, { $set: { startBlock } }, { upsert: true })
     }
 
     async getStartBlock() {
-        const item = await this.botCollection.get('0')
-        return item?.props?.startBlock
+        const item = await this.botCollection.findOne({ _id: 0 })
+        return item?.startBlock
     }
 
     async setNonce(nonce) {
         // save as bots[0] for easy retrieve
-        await this.botCollection.set('0', {
-            nonce
-        })
+        await this.botCollection.updateOne({ _id: 0 }, { $set: { nonce } }, { upsert: true })
     }
 
     async getNonce() {
-        const item = await this.botCollection.get('0')
-        return item?.props?.nonce ?? 0
+        const item = await this.botCollection.findOne({ _id: 0 })
+        return item?.nonce ?? 0
     }
 
     async setLatestPingTransactionHash(latestTransactionHash) {
-        const item = await this.botCollection.get('0')
-        await item.set({ latestTransactionHash })
+        await this.botCollection.updateOne({ _id: 0 }, { $set: { latestTransactionHash } }, { upsert: true })
     }
 
     async getLatestPingTransactionHash() {
-        const item = await this.botCollection.get('0')
-        return item?.props?.latestTransactionHash
+        const item = await this.botCollection.findOne({ _id: 0 })
+        return item?.latestTransactionHash
     }
 }
 

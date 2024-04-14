@@ -8,25 +8,19 @@ import PQueue from 'p-queue';
 const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY
 const CONTRACT_ADDRESS = '0xA7F42ff7433cB268dD7D59be62b00c30dEd28d3D'
-const TEST_CONTRACT_ADDRESS = '0x6d821821844e76a79983198906797a48fe96ea67'
 
 
 
 export default class PongBot {
-    constructor() {
-        this.pongBotDB = new PongBotDB()
-    }
     async init() {
         if (!SEPOLIA_RPC_URL || !PRIVATE_KEY) {
             throw (ConsoleMessage.MISSING_ENV)
         }
+        const pongBotDB = new PongBotDB()
+        this.pongBotDB = await pongBotDB.init()
         this.provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
         this.signer = new ethers.Wallet(PRIVATE_KEY, this.provider);
         this.contract = new ethers.Contract(CONTRACT_ADDRESS, PingPong.abi, this.signer)
-        this.testContract = new ethers.Contract(TEST_CONTRACT_ADDRESS, PingPong.abi, this.signer)
-        this.nonceManager = new ethers.NonceManager(this.signer)
-
-        await this.pongBotDB.resetStartBlock()
 
         await this.updateStartBlock()
 
@@ -42,8 +36,10 @@ export default class PongBot {
             throw (ConsoleMessage.SHOULD_INIT_FIRST)
         }
         try {
+            const startBlockFromChain = await this.provider.getBlockNumber()
             const startBlockFromDB = await this.pongBotDB.getStartBlock();
-            this.startBlock = startBlockFromDB || await this.provider.getBlockNumber()
+            this.startBlock = startBlockFromDB || startBlockFromChain
+            console.log(ConsoleMessage.START_BLOCK_FROM_CHAIN, startBlockFromChain)
             await this.pongBotDB.setStartBlock(this.startBlock)
         } catch (e) {
             console.log(ConsoleMessage.UPDATE_START_BLOCK_FAILED)
@@ -63,11 +59,14 @@ export default class PongBot {
             const latestTransactionHash = await this.pongBotDB.getLatestPingTransactionHash()
 
 
-            // check if this hash has a corresponding pong (since when pong, we saved the hash before calling contract pong)
-            const pongEvents = await this.contract.queryFilter(this.contract.filters.Pong, this.startBlock)
-            const pongTransactions = await Promise.all(pongEvents.filter(event => latestTransactionHash && event.data === latestTransactionHash).map(event => this.provider.getTransaction(event.transactionHash)))
-            if (!pongTransactions.filter(x => x).some(transaction => transaction.from === this.signer.address)) {
-                await this.pong(latestTransactionHash)
+            if (latestTransactionHash) {
+                // check if this hash has a corresponding pong (since when pong, we saved the hash before calling contract pong)
+                const pongEvents = await this.contract.queryFilter(this.contract.filters.Pong, this.startBlock)
+                const pongTransactions = await Promise.all(pongEvents.filter(event => event.data === latestTransactionHash).map(event => this.provider.getTransaction(event.transactionHash)))
+
+                if (!pongTransactions.filter(x => x).some(transaction => transaction.from === this.signer.address)) {
+                    await this.pong(latestTransactionHash)
+                }
             }
 
             // query for all ping events from the start block
@@ -92,7 +91,7 @@ export default class PongBot {
     }
 
     async pong(transactionHash) {
-        if (!this.testContract) {
+        if (!this.contract) {
             throw (ConsoleMessage.SHOULD_INIT_FIRST)
         }
         try {
@@ -101,7 +100,7 @@ export default class PongBot {
             await this.pongBotDB.setLatestPingTransactionHash(transactionHash)
 
             const currentNonce = Math.max(await this.signer.getNonce(), await this.pongBotDB.getNonce())
-            await this.testContract.pong(transactionHash, {
+            await this.contract.pong(transactionHash, {
                 nonce: currentNonce,
             })
             // have another try catch to save nonce
@@ -111,6 +110,7 @@ export default class PongBot {
             } catch (e) {
                 console.log(ConsoleMessage.FAILED_TO_SAVE_NONCE)
             }
+            console.log(ConsoleMessage.END_PONG, transactionHash)
         }
         catch (e) {
             console.log(ConsoleMessage.PONG_FAILED, transactionHash)
